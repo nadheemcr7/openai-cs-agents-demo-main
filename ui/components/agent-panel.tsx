@@ -1,11 +1,12 @@
 "use client";
 
-import { Bot } from "lucide-react";
+import { Bot, User } from "lucide-react";
 import type { Agent, AgentEvent, GuardrailCheck } from "@/lib/types";
 import { AgentsList } from "./agents-list";
 import { Guardrails } from "./guardrails";
 import { ConversationContext } from "./conversation-context";
 import { RunnerOutput } from "./runner-output";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 interface AgentPanelProps {
   agents: Agent[];
@@ -19,6 +20,7 @@ interface AgentPanelProps {
     flight_number?: string;
     account_number?: string;
   };
+  customerInfo?: any;
 }
 
 export function AgentPanel({
@@ -27,6 +29,7 @@ export function AgentPanel({
   events,
   guardrails,
   context,
+  customerInfo,
 }: AgentPanelProps) {
   const activeAgent = agents.find((a) => a.name === currentAgent);
   const runnerEvents = events.filter((e) => e.type !== "message");
@@ -42,6 +45,40 @@ export function AgentPanel({
       </div>
 
       <div className="flex-1 overflow-y-auto p-6 bg-gray-50/50">
+        {/* Customer Info Section */}
+        {customerInfo && (
+          <div className="mb-6">
+            <Card className="bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm flex items-center gap-2 text-blue-800">
+                  <User className="h-4 w-4" />
+                  Customer Information
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="pt-0">
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div>
+                    <span className="text-blue-600 font-medium">Name:</span>{" "}
+                    <span className="text-gray-800">{customerInfo.customer?.name}</span>
+                  </div>
+                  <div>
+                    <span className="text-blue-600 font-medium">Account:</span>{" "}
+                    <span className="text-gray-800">{customerInfo.customer?.account_number}</span>
+                  </div>
+                  <div className="col-span-2">
+                    <span className="text-blue-600 font-medium">Email:</span>{" "}
+                    <span className="text-gray-800">{customerInfo.customer?.email}</span>
+                  </div>
+                  <div className="col-span-2">
+                    <span className="text-blue-600 font-medium">Active Bookings:</span>{" "}
+                    <span className="text-gray-800">{customerInfo.bookings?.length || 0}</span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
         <AgentsList agents={agents} currentAgent={currentAgent} />
         <Guardrails
           guardrails={guardrails}

@@ -4,15 +4,16 @@ import React, { useState, useRef, useEffect, useCallback } from "react";
 import type { Message } from "@/lib/types";
 import ReactMarkdown from "react-markdown";
 import { SeatMap } from "./seat-map";
+import { LogOut } from "lucide-react";
 
 interface ChatProps {
   messages: Message[];
   onSendMessage: (message: string) => void;
-  /** Whether waiting for assistant response */
   isLoading?: boolean;
+  customerInfo?: any;
 }
 
-export function Chat({ messages, onSendMessage, isLoading }: ChatProps) {
+export function Chat({ messages, onSendMessage, isLoading, customerInfo }: ChatProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [inputText, setInputText] = useState("");
   const [isComposing, setIsComposing] = useState(false);
@@ -24,12 +25,11 @@ export function Chat({ messages, onSendMessage, isLoading }: ChatProps) {
     messagesEndRef.current?.scrollIntoView({ behavior: "instant" });
   }, [messages, isLoading]);
 
-  // Watch for special seat map trigger message (anywhere in list) and only if a seat has not been picked yet
+  // Watch for special seat map trigger message
   useEffect(() => {
     const hasTrigger = messages.some(
       (m) => m.role === "assistant" && m.content === "DISPLAY_SEAT_MAP"
     );
-    // Show map if trigger exists and seat not chosen yet
     if (hasTrigger && !selectedSeat) {
       setShowSeatMap(true);
     }
@@ -60,17 +60,36 @@ export function Chat({ messages, onSendMessage, isLoading }: ChatProps) {
     [handleSend, isComposing]
   );
 
+  const handleLogout = () => {
+    window.location.reload();
+  };
+
   return (
     <div className="flex flex-col h-full flex-1 bg-white shadow-sm border border-gray-200 border-t-0 rounded-xl">
-      <div className="bg-blue-600 text-white h-12 px-4 flex items-center rounded-t-xl">
+      <div className="bg-blue-600 text-white h-12 px-4 flex items-center justify-between rounded-t-xl">
         <h2 className="font-semibold text-sm sm:text-base lg:text-lg">
           Customer View
         </h2>
+        {customerInfo && (
+          <div className="flex items-center gap-3">
+            <span className="text-xs opacity-80">
+              {customerInfo.customer?.name}
+            </span>
+            <button
+              onClick={handleLogout}
+              className="p-1 hover:bg-blue-700 rounded transition-colors"
+              title="Logout"
+            >
+              <LogOut className="h-4 w-4" />
+            </button>
+          </div>
+        )}
       </div>
+      
       {/* Messages */}
       <div className="flex-1 overflow-y-auto min-h-0 md:px-4 pt-4 pb-20">
         {messages.map((msg, idx) => {
-          if (msg.content === "DISPLAY_SEAT_MAP") return null; // Skip rendering marker message
+          if (msg.content === "DISPLAY_SEAT_MAP") return null;
           return (
             <div
               key={idx}
