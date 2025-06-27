@@ -1,5 +1,4 @@
 import os
-from supabase import create_client, Client
 from typing import Optional, Dict, Any, List
 import logging
 
@@ -60,6 +59,21 @@ class MockDatabase:
                     "departure_time": "2024-01-16T15:00:00Z",
                     "arrival_time": "2024-01-16T19:00:00Z"
                 }
+            },
+            "GHI789": {
+                "id": "3",
+                "confirmation_number": "GHI789", 
+                "customer_id": "1",
+                "flight_id": "3",
+                "seat_number": "15F",
+                "booking_status": "Confirmed",
+                "customers": self.customers["CUST001"],
+                "flights": {
+                    "id": "3",
+                    "flight_number": "AA303",
+                    "departure_time": "2024-01-20T08:00:00Z",
+                    "arrival_time": "2024-01-20T12:00:00Z"
+                }
             }
         }
         
@@ -79,6 +93,14 @@ class MockDatabase:
                 "gate": "B5",
                 "terminal": "2", 
                 "delay_minutes": 30
+            },
+            "AA303": {
+                "id": "3", 
+                "flight_number": "AA303",
+                "current_status": "On Time",
+                "gate": "C8",
+                "terminal": "1", 
+                "delay_minutes": None
             }
         }
         
@@ -135,16 +157,18 @@ class SupabaseClient:
         key = os.getenv("SUPABASE_ANON_KEY")
         
         if not url or not key:
-            logger.warning("SUPABASE_URL and SUPABASE_ANON_KEY not found, using mock database")
+            logger.info("SUPABASE_URL and SUPABASE_ANON_KEY not found, using mock database")
             self.use_mock = True
             self.mock_db = MockDatabase()
             return
         
         try:
+            from supabase import create_client, Client
             self.supabase: Client = create_client(url, key)
             self.use_mock = False
+            logger.info("Successfully connected to Supabase")
         except Exception as e:
-            logger.error(f"Failed to initialize Supabase client: {e}")
+            logger.warning(f"Failed to initialize Supabase client: {e}, falling back to mock database")
             self.use_mock = True
             self.mock_db = MockDatabase()
     
@@ -225,10 +249,15 @@ class SupabaseClient:
             return await self.mock_db.get_customer_bookings(account_number)
         
         try:
+            # First get customer ID
+            customer = await self.get_customer_by_account_number(account_number)
+            if not customer:
+                return []
+            
             response = self.supabase.table("bookings").select("""
                 *,
                 flights:flight_id(*)
-            """).eq("customers.account_number", account_number).execute()
+            """).eq("customer_id", customer["id"]).execute()
             
             return response.data or []
         except Exception as e:
