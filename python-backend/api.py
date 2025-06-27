@@ -36,7 +36,7 @@ from agents import (
 from database import db_client
 
 # Configure logging
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI()
@@ -57,7 +57,7 @@ app.add_middleware(
 class ChatRequest(BaseModel):
     conversation_id: Optional[str] = None
     message: str
-    account_number: Optional[str] = None  # New field for customer identification
+    account_number: Optional[str] = None
 
 class MessageResponse(BaseModel):
     content: str
@@ -89,17 +89,10 @@ class ChatResponse(BaseModel):
     guardrails: List[GuardrailCheck] = []
 
 # =========================
-# In-memory store for conversation state (enhanced with Supabase persistence)
+# In-memory store for conversation state
 # =========================
 
 class ConversationStore:
-    def get(self, conversation_id: str) -> Optional[Dict[str, Any]]:
-        pass
-
-    def save(self, conversation_id: str, state: Dict[str, Any]):
-        pass
-
-class SupabaseConversationStore(ConversationStore):
     def __init__(self):
         self._memory_cache: Dict[str, Dict[str, Any]] = {}
 
@@ -131,16 +124,17 @@ class SupabaseConversationStore(ConversationStore):
         
         # Save to database
         try:
+            context_dict = state["context"].dict() if hasattr(state["context"], "dict") else state["context"]
             await db_client.save_conversation(
                 session_id=conversation_id,
                 history=state.get("input_items", []),
-                context=state["context"].dict() if hasattr(state["context"], "dict") else state["context"],
+                context=context_dict,
                 current_agent=state.get("current_agent", "Triage Agent")
             )
         except Exception as e:
             logger.error(f"Error saving conversation to database: {e}")
 
-conversation_store = SupabaseConversationStore()
+conversation_store = ConversationStore()
 
 # =========================
 # Helpers
@@ -193,10 +187,10 @@ def build_agents_list() -> List[Dict[str, Any]]:
 @app.post("/chat", response_model=ChatResponse)
 async def chat_endpoint(req: ChatRequest):
     """
-    Main chat endpoint for agent orchestration with Supabase integration.
+    Main chat endpoint for agent orchestration.
     """
     try:
-        logger.debug(f"Received request: {req}")
+        logger.info(f"Received request: {req}")
         
         # Initialize or retrieve conversation state
         is_new = not req.conversation_id or await conversation_store.get(req.conversation_id) is None
@@ -229,7 +223,7 @@ async def chat_endpoint(req: ChatRequest):
                     guardrails=[],
                 )
         else:
-            conversation_id = req.conversation_id  # type: ignore
+            conversation_id = req.conversation_id
             state = await conversation_store.get(conversation_id)
             if state is None:
                 raise HTTPException(status_code=400, detail="Invalid conversation ID")
@@ -239,12 +233,12 @@ async def chat_endpoint(req: ChatRequest):
         old_context = state["context"].dict().copy()
         guardrail_checks: List[GuardrailCheck] = []
 
-        logger.debug(f"Running agent: {current_agent.name}, input_items: {state['input_items']}")
+        logger.info(f"Running agent: {current_agent.name}")
         context_wrapper = RunContextWrapper(context=state["context"])
         result = await Runner.run(
-            current_agent,  # Agent as first argument
-            state["input_items"],  # Input items as second argument
-            context=context_wrapper  # Context as keyword argument
+            current_agent,
+            state["input_items"],
+            context=context_wrapper
         )
 
         messages: List[MessageResponse] = []
@@ -265,11 +259,6 @@ async def chat_endpoint(req: ChatRequest):
                         metadata={"source_agent": item.source_agent.name, "target_agent": item.target_agent.name},
                     )
                 )
-                ho = next((h for h in getattr(item.source_agent, "handoffs", []) if getattr(h, "agent_name", "") == item.target_agent.name), None)
-                if ho and hasattr(ho, "on_invoke_handoff"):
-                    fn = ho.on_invoke_handoff
-                    cb_name = getattr(fn, "__name__", repr(fn))
-                    events.append(AgentEvent(id=uuid4().hex, type="tool_call", agent=item.target_agent.name, content=cb_name))
                 current_agent = item.target_agent
             elif isinstance(item, ToolCallItem):
                 tool_name = getattr(item.raw_item, "name", "")
@@ -365,7 +354,7 @@ async def chat_endpoint(req: ChatRequest):
         )
     except Exception as e:
         logger.error(f"Unexpected error in chat_endpoint: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Internal server error. Please try again later.")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 # =========================
 # Additional Endpoints for Customer Management
@@ -385,6 +374,8 @@ async def get_customer_info(account_number: str):
             "customer": customer,
             "bookings": bookings
         }
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error fetching customer info: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
@@ -398,6 +389,17 @@ async def get_booking_info(confirmation_number: str):
             raise HTTPException(status_code=404, detail="Booking not found")
         
         return booking
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error fetching booking info: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint"""
+    return {"status": "healthy"}
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
